@@ -1,0 +1,70 @@
+# --- 1. INITIALIZATION ---
+units           metal           # Use Angestroms and eV (standard for crystals)
+atom_style      charge           # Atoms have charge (+/-)
+dimension       3
+boundary        p p p           # Periodic boundaries (infinitive crystal)
+# --- 2. ATOM DEFINITION (Wurtzite Crystal) ---
+variable a equal 3.25
+variable c equal 5.20
+
+# Define lattice (Hexagonal Unit Cell)
+lattice custom   1.0 a1 $a 0.0 0.0 a2 -1.625 2.81458 0.0 a3 0.0 0.0 $c &
+                 basis 0.0 0.0 0.0 &
+                 basis 0.33333 0.66667 0.5 &
+                 basis 0.0 0.0 0.375 &
+                 basis 0.33333 0.66667 0.875
+
+# Create the simulation box (4x4x4 unit cells)
+region      mybox block 0 4 0 4 0 4
+create_box  2 mybox
+create_atoms 1 box basis 1 1 basis 2 1 basis 3 2 basis 4 2
+
+# Set Masses (Zn=65.38, O=15.999)
+mass 1 65.38
+mass 2 15.999
+# --- 3. FORCE FIELD (Bush et al. Parameters) ---
+# We use Buckingham potential for short-range + Coulomb for long-range
+pair_style      buck/coul/long 10.0
+
+# Define interactions: atom_type1 atom_type2  A  rho  C
+# 1=Zn, 2=O
+
+# Global default (ignore this, we set specific pairs below)
+pair_coeff      * * 0.000    1.000   0.00
+
+# Zn-Zn: Pure Coulomb repulsion only (No short-range overlap parameters)
+pair_coeff      1 1    0.000    1.000   0.00
+
+# O-O: Strong repulsion + Van der Waals attraction
+pair_coeff      2 2 22764.00    0.1490 27.88
+
+# Zn-O: The main bond holding the crystal together (Bush et al. values)
+pair_coeff      1 2   499.64    0.3595  0.00
+
+# Define Atomic Charges
+set type 1 charge  2.0  # Zinc is +2
+set type 2 charge -2.0  # Oxygen is -2
+
+# Long-range Solver (PPPM) - Calculates electrostatics efficiently
+kspace_style    pppm 1.0e-4
+
+# --- 4. OPTIMIZATION (Relaxation) ---
+# Output settings
+thermo          10
+thermo_style    custom step temp pe lx ly lz press pxx pyy pzz
+
+# 1. Minimize Energy (Move atoms to comfy spots)
+minimize        1.0e-25 1.0e-25 1000 10000
+
+# 2. Relax Box (Change box size to reach 0 pressure)
+# "couple xy" forces the hexagon to stay hexagonal
+fix             1 all box/relax x 0.0 y 0.0 z 0.0 couple xy vmax 0.001
+minimize        1.0e-25 1.0e-25 1000 10000
+
+# --- 5. OUTPUT ---
+variable final_a equal lx/4
+variable final_c equal lz/4
+print "----------------------------------------"
+print "Final Lattice Parameter a = ${final_a} Angstroms"
+print "Final Lattice Parameter c = ${final_c} Angstroms"
+print "----------------------------------------"
