@@ -1,0 +1,88 @@
+# --- 1. INITIALIZATION ---
+units           metal
+atom_style      charge
+dimension       3
+boundary        p p p
+
+# --- 2. ATOM DEFINITION ---
+variable a equal 4.85   # We use SIMULATED 'a' as the starting guess
+variable c equal 5.16   # We use SIMULATED 'c' as the starting guess
+
+# Define lattice
+lattice custom   1.0 a1 $a 0.0 0.0 a2 -2.425 4.20 0.0 a3 0.0 0.0 $c &
+                 basis 0.0 0.0 0.0 &
+                 basis 0.33333 0.66667 0.5 &
+                 basis 0.0 0.0 0.375 &
+                 basis 0.33333 0.66667 0.875
+
+region      mybox block 0 6 0 6 0 6   # Increased box size to 6x6x6 for better statistics
+create_box  3 mybox                   # <--- CHANGED to 3 (Zn, O, Cu)
+create_atoms 1 box basis 1 1 basis 2 1 basis 3 2 basis 4 2
+
+# Set Masses
+mass 1 65.38   # Zn
+mass 2 15.999  # O
+mass 3 63.546  # Cu  <--- NEW (Copper)
+
+# --- 3. DOPING (The Magic Step) ---
+# Randomly turn 2% (0.02) of Type 1 (Zn) into Type 3 (Cu)
+# The number '12345' is the random seed (change it to get different random distributions)
+set type 1 type/fraction 3 0.02 12345
+
+# --- 4. FORCE FIELD ---
+pair_style      buck/coul/long 10.0
+pair_coeff      * * 0.000    1.000   0.00
+
+# Zn-Zn (1-1)
+pair_coeff      1 1    0.000    1.000   0.00
+# O-O (2-2)
+pair_coeff      2 2 22764.00    0.1490 27.88
+# Zn-O (1-2)
+pair_coeff      1 2   499.64    0.3595  0.00
+
+# --- NEW COPPER INTERACTIONS ---
+# We assume Cu behaves similar to Zn, but slightly "smaller" (radius 0.72 vs 0.74)
+# Cu-Cu (3-3): Coulomb only
+pair_coeff      3 3    0.000    1.000   0.00
+# Cu-Zn (3-1): Coulomb only
+pair_coeff      3 1    0.000    1.000   0.00
+# Cu-O (3-2): Slightly stronger/shorter bond than Zn-O
+# Note: Lowering 'rho' makes the atom appear "smaller"
+pair_coeff      3 2   499.64    0.3400  0.00 
+
+# Set Charges
+set type 1 charge  2.0  # Zn
+set type 2 charge -2.0  # O
+set type 3 charge  2.0  # Cu (+2 charge like Zinc)
+
+kspace_style    pppm 1.0e-4
+
+# --- 5. OPTIMIZATION ---
+thermo          10
+thermo_style    custom step temp pe lx ly lz press
+run             0
+
+# Minimize
+minimize        1.0e-25 1.0e-25 1000 10000
+
+# Relax Box (Find new lattice constants)
+fix             1 all box/relax x 0.0 y 0.0 z 0.0 couple xy vmax 0.001
+# --- VISUALIZATION OUTPUT ---
+# Dump atom coordinates to a file named 'doped_movie.lammpstrj'
+# Output every 10 iterations. Columns: Atom-ID, Atom-Type, X, Y, Z, Charge
+dump        1 all custom 10 doped_movie.lammpstrj id type x y z q
+
+# Map element names to types for OVITO (Optional but helpful)
+# This writes a header telling OVITO that Type 1=Zn, 2=O, 3=Cu
+dump_modify 1 element Zn O Cu
+
+minimize        1.0e-25 1.0e-25 1000 10000
+
+# --- 6. OUTPUT ---
+variable final_a equal lx/6   # Divided by 6 because box is 6 units wide
+variable final_c equal lz/6
+print "----------------------------------------"
+print "DOPING LEVEL: 2%"
+print "Final Lattice Parameter a = ${final_a} Angstroms"
+print "Final Lattice Parameter c = ${final_c} Angstroms"
+print "----------------------------------------"
