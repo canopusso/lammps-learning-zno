@@ -1,0 +1,60 @@
+# --- 1. SETUP THE LOOP ---
+# Define the variable 'f' (fraction) to take these values one by one
+variable f index 0.00 0.02 0.04 0.06
+
+# Mark this spot as the "Start" of the loop
+label start_loop
+
+# --- 2. INITIALIZATION (Must re-run every time) ---
+units           metal
+atom_style      charge
+dimension       3
+boundary        p p p
+
+# --- 3. ATOM DEFINITION ---
+variable a equal 3.25
+variable c equal 5.20
+
+lattice custom   1.0 a1 $a 0.0 0.0 a2 -1.625 2.81458 0.0 a3 0.0 0.0 $c &
+                 basis 0.0 0.0 0.0 &
+                 basis 0.33333 0.66667 0.5 &
+                 basis 0.0 0.0 0.375 &
+                 basis 0.33333 0.66667 0.875
+
+region      mybox block 0 6 0 6 0 6
+create_box  3 mybox
+create_atoms 1 box basis 1 1 basis 2 1 basis 3 2 basis 4 2
+
+mass 1 65.38   # Zn
+mass 2 15.999  # O
+mass 3 63.546  # Cu
+
+# --- 4. DOPING (Controlled by Loop Variable $f) ---
+# If f is 0.00, this command does nothing (safe)
+if "$f > 0.0" then "set type 1 type/fraction 3 $f 56789"
+
+# --- 5. FORCE FIELD (COMB3) ---
+pair_style      comb3 polar_off
+pair_coeff      * * ffield.comb3 Zn O Cu
+fix             my_qeq all qeq/comb 10 0.0001
+
+# --- 6. OPTIMIZATION ---
+# We turn off thermodynamic output to keep the terminal clean
+thermo          0
+minimize        1.0e-12 1.0e-12 1000 10000
+
+# Relax Box
+fix             1 all box/relax x 0.0 y 0.0 z 0.0 couple xy vmax 0.001
+minimize        1.0e-12 1.0e-12 1000 10000
+
+# --- 7. DATA COLLECTION ---
+variable final_a equal lx/6
+variable final_c equal lz/6
+
+# Print to Terminal AND a File ('results.txt')
+print "Doping_Fraction: $f  a: ${final_a}  c: ${final_c}" append results.txt screen yes
+
+# --- 8. LOOP LOGIC ---
+clear               # Wipe memory for the next run
+next f              # Move to the next value in the list (0.00 -> 0.02)
+jump SELF start_loop # Jump back to the label 'start_loop'
